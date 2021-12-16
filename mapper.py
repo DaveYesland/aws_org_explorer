@@ -1,7 +1,9 @@
 import boto3
 import botocore
+import sys
 
 from core.sso import retrieve_aws_sso_token, retrieve_aws_accounts, retrieve_credentials, retrieve_roles_in_account
+from core.profile import profile_get_aws_account
 from core.iamEnum import retreive_roles, retreive_users
 from core.db import Db
 
@@ -23,7 +25,7 @@ def save_token_to_cache(token):
         f.write(token)
 
 
-def process_account(sso, aws_sso_token, account, db):
+def sso_process_account(sso, aws_sso_token, account, db):
 
     sso_roles = retrieve_roles_in_account(sso, aws_sso_token, account)
 
@@ -56,27 +58,64 @@ def process_account(sso, aws_sso_token, account, db):
                     f"\tRole {access_role} does not have permissions to list users/roles...trying next role")
                 continue
 
+def profile_process_account(profile, boto_session, account, db):    
+    try:
+        print(f"\tListing {account['accountId']} using profile, {profile}")
+        iamClient = boto_session.client('iam')
+        roles = retreive_roles(iamClient)
+        users = retreive_users(iamClient)
+        
+        for role in roles:
+            db.add_aws_role(role)
+        for user in users:
+            db.add_aws_user(user)
+
+    except botocore.exceptions.ClientError as error:
+        if error.response['Error']['Code'] == 'AccessDenied':
+            print(
+                f"\tProfile {profile} does not have permissions to list users/roles...trying next role")
 
 if __name__ == "__main__":
-    aws_sso_token = get_token_from_cache()
     db = Db(neo4j_config['host'], neo4j_config['user'], neo4j_config['pass'])
-    sso = boto3.client('sso', region_name=sso_config['region'])
+    
 
-    try:
-        aws_accounts_list = retrieve_aws_accounts(sso, aws_sso_token)
-    except Exception as error:
-        aws_sso_token = retrieve_aws_sso_token(None)
-        save_token_to_cache(aws_sso_token)
-        aws_accounts_list = retrieve_aws_accounts(sso, aws_sso_token)
+    if len(sys.argv) > 1:
+        profiles = sys.argv[1:]
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = []
+            count = 0
+            for profile in profiles:
+                boto_session = boto3.session.Session(profile_name=profile)
+                account = profile_get_aws_account(profile, boto_session)
+                db.add_aws_account(account)
+                futures.append(executor.submit(
+                    profile_process_account, profile, boto_session, account, db))
+            
+            
+            for future in concurrent.futures.as_completed(futures):
+                count += 1
+                print(f"Completed ({count}/{len(profiles)})")
+    else:
+        aws_sso_token = get_token_from_cache()
+        sso = boto3.client('sso', region_name=sso_config['region'])
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = []
-        count = 0
-        for account in aws_accounts_list:
-            db.add_aws_account(account)
-            futures.append(executor.submit(
-                process_account, sso, aws_sso_token, account, db))
+        try:
+            aws_accounts_list = retrieve_aws_accounts(sso, aws_sso_token)
+        except Exception as error:
+            aws_sso_token = retrieve_aws_sso_token(None)
+            save_token_to_cache(aws_sso_token)
+            aws_accounts_list = retrieve_aws_accounts(sso, aws_sso_token)
 
-        for future in concurrent.futures.as_completed(futures):
-            count += 1
-            print(f"Completed ({count}/{len(aws_accounts_list)})")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = []
+            count = 0
+            for account in aws_accounts_list:
+                db.add_aws_account(account)
+                futures.append(executor.submit(
+                    sso_process_account, sso, aws_sso_token, account, db))
+
+
+            for future in concurrent.futures.as_completed(futures):
+                count += 1
+                print(f"Completed ({count}/{len(aws_accounts_list)})")
