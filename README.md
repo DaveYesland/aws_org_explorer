@@ -15,7 +15,7 @@ Using this tool users can discover how role trusts are delegated in the organiza
 * AWS SSO Account 
 * py2neo
 
-## How to Use
+## How to Use with SSO
 
 1. Install the Python3 requirements with `pip3 install -r requirements.txt`
 
@@ -30,6 +30,14 @@ If there is no `token` file stored in the directory the SSO auth flow will start
 The tool will attempt to use the first valid role associated with the SSO account. If there is access denied the tool will move the next available role within the account.
 
 Once completed the graph is generated in Neo4j. Using the sample queries below or designed your own by referencing the structure in `## Graph Structure` you can begin to extract information about the organization.
+
+## How to Use with AWS profiles
+
+1. Install the Python3 requirements with `pip3 install -r requirements.txt`
+
+2. Install Neo4j and add the connection details to `config.py`. 
+
+3. Run the tool with all the profiles you want to include as arguments `python3 mapper.py profile1 profile2 profile3 ...`
 
 ### Notes
 
@@ -61,7 +69,7 @@ I am currently not planning on implementing an interface for this tool as it ser
 
 * Find all routes from account A to any account 
 
-  `MATCH p=(A:Account {accountId: "111111111"})-[:OWNS]->(x)-[:ASSUMES]->(y)<-[:OWNS]-(B:Account}) RETURN p`
+  `MATCH p=(A:Account {accountId: "111111111"})-[:OWNS]->(x)-[:ASSUMES]->(y)<-[:OWNS]-(B:Account) RETURN p`
 
 * Find all roles that trust ":root" of an account. 
 
