@@ -61,7 +61,7 @@ I am currently not planning on implementing an interface for this tool as it ser
 
 * Find all routes from account A to any account 
 
-  `MATCH p=(A:Account {accountId: "111111111"})-[:OWNS]->(x)-[:ASSUMES]->(y)<-[:OWNS]-(B:Account}) RETURN p`
+  `MATCH p=(A:Account {accountId: "111111111"})-[:OWNS]->(x)-[:ASSUMES]->(y)<-[:OWNS]-(B:Account) RETURN p`
 
 * Find all roles that trust ":root" of an account. 
 
